@@ -30,18 +30,27 @@ class Superbot:
         self.bf.connect_to_container(self.container)
         self.ws_proc = mp.Process(target=self.bf.run, args=(), kwargs={}, daemon=True)
 
-        #self.log_proc = mp.Process(target=関数, args=(), kwargs={}, daemon=True)
+        self.log = Log()
+        self.log_proc = mp.Process(target=self.log.run, args=(), kwargs={}, daemon=True)
         #self.monitor_thrd = threading.Thread(target=, args=(), daemon=True)
         return
 
     def run(self):
         self.ws_proc.start()
         self.container_thrd.start()
+        self.log_proc.start()
         #self.logic_thrd.start()
         self.logic.run(self.container)
 
         while True:
             time.sleep(1.0)        
+        return
+
+class Log:
+    def __init__(self):
+        return
+
+    def run(self):
         return
 
 import matplotlib.pyplot as plt
@@ -62,7 +71,7 @@ class Logic:
         while True:
             lobj_a.set_data(container.board_ask.keys(), container.board_ask.values())
             lobj_b.set_data(container.board_bid.keys(), container.board_bid.values())
-            ax.set_xlim(container.ticker_bid[-1] - 1000, container.ticker_ask[-1] + 1000)
+            ax.set_xlim(container.ticker_bid[-1] - 10000, container.ticker_ask[-1] + 10000)
             ax.set_ylim(0, 20)
             plt.pause(0.25)
 
@@ -98,21 +107,6 @@ class ws_bitflyer:
         self.channels = []
 
 
-        return
-
-    def get_board(self, timespan = 5):
-        last_get_time = 0
-        while True:
-            if time.time() > last_get_time + timespan:
-                try:
-                    res = self.API.board(params = "FX_BTC_JPY")
-                    if "mid_price" in res.keys():
-                         self.board_writer.send(res)
-                         last_get_time = time.time()
-                except:
-                    print(traceback.format_exc())
-            else:
-                time.sleep(0.01)
         return
     
     def connect_to_container(self, container):
@@ -160,6 +154,21 @@ class ws_bitflyer:
         except:
             print(traceback.format_exc(), flush=True)
         return
+
+    def get_board(self, timespan = 5):
+        last_get_time = 0
+        while True:
+            if time.time() > last_get_time + timespan:
+                try:
+                    res = self.API.board(product_code = "FX_BTC_JPY")
+                    if "mid_price" in res.keys():
+                         self.board_writer.send(res)
+                         last_get_time = time.time()
+                except:
+                    print(traceback.format_exc())
+            else:
+                time.sleep(0.01)
+        return
     
     def connect_json_rpc(self):
         def on_message(ws, message):
@@ -189,7 +198,6 @@ class ws_bitflyer:
             return
         
         def on_open(ws):
-            print("# bitflyer connecting 1", flush=True)
             for ch in self.channels:
                 ws.send(json.dumps({"method" : "subscribe", "params" : {"channel" : ch}}))
             print("# bitflyer connected 1", flush=True)
@@ -199,7 +207,6 @@ class ws_bitflyer:
         def make_ws(timeout = 5):
             while True:
                 try:
-                    print("# generating websocket 1", flush=True)
                     ws = websocket.WebSocketApp(self.url,
                                         on_message = on_message,
                                         on_error = on_error,
@@ -265,7 +272,6 @@ class Container:
                     self.board_ask.update([(d.get('price', 0), d.get('size', 0)) for d in message["asks"]])
                     self.board_bid.update([(d.get('price', 0), d.get('size', 0)) for d in message["bids"]])
                     mid_price = message["mid_price"]
-                    print(mid_price)
                     for d in self.board_ask:
                         if d < mid_price:
                             self.board_ask[d] = 0
@@ -277,6 +283,7 @@ class Container:
                         else:
                             break
 
+                            
                 time.sleep(0.001)
         except:
             print(traceback.format_exc())
