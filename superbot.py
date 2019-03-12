@@ -11,6 +11,8 @@ import json
 from datetime import datetime
 import calendar
 
+import pybitflyer2
+import numpy as np
 def main():
     spbot = Superbot()
     spbot.run()
@@ -20,7 +22,7 @@ def main():
 class Superbot:
     def __init__(self):
         self.logic = Logic()
-        self.container = Container()
+        self.container = Container(channel = {"board" : True, "ticker" : True, "executions" : True})
         self.container_thrd = threading.Thread(target=self.container.run, args=(), daemon=True)
         self.logic_thrd = threading.Thread(target=self.logic.run, args=(self.container,), daemon=True)
         
@@ -35,29 +37,39 @@ class Superbot:
     def run(self):
         self.ws_proc.start()
         self.container_thrd.start()
-        self.logic_thrd.start()
+        #self.logic_thrd.start()
+        self.logic.run(self.container)
 
         while True:
             time.sleep(1.0)        
         return
 
-
+import matplotlib.pyplot as plt
 class Logic:
     def __init__(self, max_workers = 6):
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers)
         return
+    
     def run(self, container, min_len = 3):
         while not (len(container.ticker_time) > min_len and len(container.execution_time) > min_len):
             time.sleep(0.1)
         last_execution_time = container.execution_time[-1]
 
+        #plt.figure()
+        #ax = plt.subplot()
+        #lobj, = ax.plot([0,1], [0,1], "k-", linewidth = 1.0)
+        #while True:
+            #print(np.array(container.board_ask.keys()).shape)
+            #lobj.set_data(container.board_ask.keys(), container.board_ask.items())
+            #plt.pause(0.25)
+
         while True:
             if container.execution_time[-1] > last_execution_time:
                 print(container.execution_time[-1], container.ticker_bid[-1], container.ticker_ask[-1], container.execution_price[-1])
                 last_execution_time = container.execution_time[-1]
-
+                print(datetime.fromtimestamp(container.execution_time[-1]))
                 time.sleep(0.01)
-                
+
         return
 
 class ws_bitflyer:
@@ -76,26 +88,49 @@ class ws_bitflyer:
             print("# generating thread : ", self.ws_thrds[-1].getName())
             self.ws_status[self.ws_thrds[-1].getName()] = False
             self.using_thread_name = self.ws_thrds[0].getName()
-            
+
+        self.API = pybitflyer2.API(timeout = 5)            
+        self.board_api_thrd = (threading.Thread(target=self.get_board, args=(), daemon=True))
         self.channels = []
+
+
         return
 
+    def get_board(self, timespan = 5):
+        last_get_time = 0
+        while True:
+            if time.time() > last_get_time + timespan:
+                try:
+                    res = self.API.board(params = "FX_BTC_JPY")
+                    if "mid_price" in res.keys():
+                         self.board_writer.send(res)
+                         last_get_time = time.time()
+                except:
+                    print(traceback.format_exc())
+            else:
+                time.sleep(0.01)
+        return
+    
     def connect_to_container(self, container):
         self.channels = []
         if container.channel["board"]:
-            self.channels.append("lightning_executions_FX_BTC_JPY")
+            self.channels.append("lightning_board_FX_BTC_JPY")
+            #self.channels.append("lightning_board_snapshot_FX_BTC_JPY")
             self.board_writer = container.board_writer
         if container.channel["ticker"]:
             self.channels.append("lightning_ticker_FX_BTC_JPY")
             self.ticker_writer = container.ticker_writer
         if container.channel["executions"]:
-            self.channels.append("lightning_board_FX_BTC_JPY")
+            self.channels.append("lightning_executions_FX_BTC_JPY")
             self.executions_writer = container.executions_writer
         return
     
     def run(self):
+        if "lightning_board_FX_BTC_JPY" in self.channels:
+            self.board_api_thrd.start()
         for i in range(self.redundancy):
             self.ws_thrds[i].start()
+            
         while True:
             time.sleep(0.1)
             if not self.ws_status[self.using_thread_name]:
@@ -106,16 +141,18 @@ class ws_bitflyer:
         return
 
     def handle_message_json_rpc(self, message):
-        print(message["params"]["channel"])
+        #print(message["params"]["channel"])
         if threading.current_thread().getName() != self.using_thread_name:
             return
         try:
             if message["params"]["channel"] == "lightning_board_FX_BTC_JPY":
-                self.board_writer.send(message["params"])
+                self.board_writer.send(message["params"]["message"])
+            elif message["params"]["channel"] == "lightning_board_snapshot_FX_BTC_JPY":
+                self.board_writer.send(message["params"]["message"])
             elif message["params"]["channel"] == "lightning_ticker_FX_BTC_JPY":
-                self.ticker_writer.send(message["params"])
+                self.ticker_writer.send(message["params"]["message"])
             elif message["params"]["channel"] == "lightning_executions_FX_BTC_JPY":
-                self.executions_writer.send(message["params"])
+                self.executions_writer.send(message["params"]["message"])
         except:
             print(traceback.format_exc(), flush=True)
         return
@@ -182,11 +219,11 @@ class Container:
     def __init__(self, channel = {"board" : True, "ticker" : True, "executions" : True}):
         self.channel = channel
         board_data_size = 10        
-        self.board = sc.SortedDict()
         self.board_ask = sc.SortedDict()
         self.board_bid = sc.SortedDict()
         self.board_time = collections.deque([], board_data_size)
-        self.board_history = collections.deque([], board_data_size)
+        self.board_ask_history = collections.deque([], board_data_size)
+        self.board_bid_history = collections.deque([], board_data_size)
         self.board_reader, self.board_writer = mp.Pipe(duplex=False)
             
         data_size = 10000
@@ -208,6 +245,7 @@ class Container:
         if self.channel["board"]:
             self.board_thrd = threading.Thread(target=self.update_board, args=(), daemon=True)
             self.board_thrd.start()
+
         if self.channel["ticker"]:            
             self.ticker_thrd = threading.Thread(target=self.update_ticker, args=(), daemon=True)
             self.ticker_thrd.start()            
@@ -217,46 +255,62 @@ class Container:
         return
 
     def update_board(self):
-        while True:
-            if self.board_reader.poll():
-                #print(self.board_reader.recv())
-                time.sleep(0.01)        
+        try:
+            while True:
+                if self.board_reader.poll():
+                    message = self.board_reader.recv()
+                    self.board_ask.update([(d.get('price', 0), d.get('size', 0)) for d in message["asks"]])
+                    self.board_bid.update([(d.get('price', 0), d.get('size', 0)) for d in message["bids"]])
+                time.sleep(0.001)
+        except:
+            print(traceback.format_exc())
+            self.update_board()
+            
         return
     
     def update_ticker(self):
-        while True:
-            if self.ticker_reader.poll():
-                message = self.ticker_reader.recv()["message"]
-                utc = datetime.strptime(message["timestamp"].split(".")[0], '%Y-%m-%dT%H:%M:%S')
-                utc = calendar.timegm(utc.timetuple()) + float("0." + message["timestamp"].strip("Z").split(".")[-1])
-                bid = message["best_bid"]
-                ask = message["best_ask"]
-                self.ticker_time.append(utc)
-                self.ticker_bid.append(bid)
-                self.ticker_ask.append(ask)
-                
-                time.sleep(0.01)        
+        try:
+            while True:
+                if self.ticker_reader.poll():
+                    message = self.ticker_reader.recv()
+                    utc = datetime.strptime(message["timestamp"].split(".")[0], '%Y-%m-%dT%H:%M:%S')
+                    utc = calendar.timegm(utc.timetuple()) + float("0." + message["timestamp"].strip("Z").split(".")[-1])
+                    bid = message["best_bid"]
+                    ask = message["best_ask"]
+                    self.ticker_time.append(utc)
+                    self.ticker_bid.append(bid)
+                    self.ticker_ask.append(ask)
+                time.sleep(0.001)
+        except:
+            print(traceback.format_exc())
+            self.update_ticker()
         return
     
     def update_executions(self):
-        while True:
-            if self.executions_reader.poll():
-                message = self.executions_reader.recv()["message"]
-                for i in message:
+        try:
+            while True:
+                if self.executions_reader.poll():
+                    message = self.executions_reader.recv()
+                    i = message[0]
                     utc = datetime.strptime(i["exec_date"].split(".")[0], '%Y-%m-%dT%H:%M:%S')
-                    utc = calendar.timegm(utc.timetuple()) + float("0." + i["exec_date"].strip("Z").split(".")[-1])
-                    price = i["price"]
-                    size = i["size"]
-                    side = i["side"]
-                    self.execution_time.append(utc)
-                    self.execution_price.append(price)
-                    self.execution_size.append(size)
-                    if side == "BUY":
-                        self.execution_side.append(1)
-                    elif side == "SELL":
-                        self.execution_side.append(-1)
+                    utc = calendar.timegm(utc.timetuple()) + float("0." + i["exec_date"].strip("Z").split(".")[-1])                    
+                    for i in message:
+                        price = i["price"]
+                        size = i["size"]
+                        side = i["side"]
+                        self.execution_time.append(utc)
+                        self.execution_price.append(price)
+                        self.execution_size.append(size)
+                        if side == "BUY":
+                            self.execution_side.append(1)
+                        elif side == "SELL":
+                            self.execution_side.append(-1)
                         
-                time.sleep(0.01)
+                time.sleep(0.001)
+        except:
+            print(traceback.format_exc())
+            self.update_executions()
+
         return    
     
 if __name__ == "__main__":
