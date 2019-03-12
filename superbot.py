@@ -8,10 +8,12 @@ import traceback
 import websocket
 import json
 
+from datetime import datetime
+import calendar
+
 def main():
     spbot = Superbot()
     spbot.run()
-    print("aaa")
     return
 
 # superbot自体はメインスレッド
@@ -44,7 +46,18 @@ class Logic:
     def __init__(self, max_workers = 6):
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers)
         return
-    def run(self, container):
+    def run(self, container, min_len = 3):
+        while not (len(container.ticker_time) > min_len and len(container.execution_time) > min_len):
+            time.sleep(0.1)
+        last_execution_time = container.execution_time[-1]
+
+        while True:
+            if container.execution_time[-1] > last_execution_time:
+                print(container.execution_time[-1], container.ticker_bid[-1], container.ticker_ask[-1], container.execution_price[-1])
+                last_execution_time = container.execution_time[-1]
+
+                time.sleep(0.01)
+                
         return
 
 class ws_bitflyer:
@@ -93,6 +106,7 @@ class ws_bitflyer:
         return
 
     def handle_message_json_rpc(self, message):
+        print(message["params"]["channel"])
         if threading.current_thread().getName() != self.using_thread_name:
             return
         try:
@@ -196,30 +210,52 @@ class Container:
             self.board_thrd.start()
         if self.channel["ticker"]:            
             self.ticker_thrd = threading.Thread(target=self.update_ticker, args=(), daemon=True)
-            self.executions_thrd = threading.Thread(target=self.update_executions, args=(), daemon=True)
+            self.ticker_thrd.start()            
         if self.channel["executions"]:
-            self.ticker_thrd.start()
+            self.executions_thrd = threading.Thread(target=self.update_executions, args=(), daemon=True)
             self.executions_thrd.start()
         return
 
     def update_board(self):
         while True:
             if self.board_reader.poll():
-                print(self.board_reader.recv()["channel"])
+                #print(self.board_reader.recv())
                 time.sleep(0.01)        
         return
     
     def update_ticker(self):
         while True:
             if self.ticker_reader.poll():
-                print(self.ticker_reader.recv()["channel"])
+                message = self.ticker_reader.recv()["message"]
+                utc = datetime.strptime(message["timestamp"].split(".")[0], '%Y-%m-%dT%H:%M:%S')
+                utc = calendar.timegm(utc.timetuple()) + float("0." + message["timestamp"].strip("Z").split(".")[-1])
+                bid = message["best_bid"]
+                ask = message["best_ask"]
+                self.ticker_time.append(utc)
+                self.ticker_bid.append(bid)
+                self.ticker_ask.append(ask)
+                
                 time.sleep(0.01)        
         return
     
     def update_executions(self):
         while True:
-            if self.board_reader.poll():
-                print(self.executions_reader.recv()["channel"])
+            if self.executions_reader.poll():
+                message = self.executions_reader.recv()["message"]
+                for i in message:
+                    utc = datetime.strptime(i["exec_date"].split(".")[0], '%Y-%m-%dT%H:%M:%S')
+                    utc = calendar.timegm(utc.timetuple()) + float("0." + i["exec_date"].strip("Z").split(".")[-1])
+                    price = i["price"]
+                    size = i["size"]
+                    side = i["side"]
+                    self.execution_time.append(utc)
+                    self.execution_price.append(price)
+                    self.execution_size.append(size)
+                    if side == "BUY":
+                        self.execution_side.append(1)
+                    elif side == "SELL":
+                        self.execution_side.append(-1)
+                        
                 time.sleep(0.01)
         return    
     
