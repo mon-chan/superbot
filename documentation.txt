@@ -1,0 +1,1 @@
+multiprocess.Pipeはデータを詰めすぎると、データがあってもpoll()がfalseを返すっぽいので、定期的にrecv()する必要がある。
