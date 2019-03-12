@@ -9,6 +9,10 @@ MONA : MQc5guJ3XoZtMgwgmKP2DS9C6bWZAeNpKV
 
 ## 説明
 とあるnote( https://note.mu/hht/n/nabc23fa1a210?magazine_key=m6ca0a3d216d3 )のアーキテクチャをパクったクズコード。
+```
+python superbot.py
+```
+で起動する。
 
 ## 注意事項
 このプログラムは一部無限ループを使用しており、起動すると兵庫県警によって補導される恐れがあります。
