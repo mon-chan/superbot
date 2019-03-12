@@ -55,21 +55,25 @@ class Logic:
             time.sleep(0.1)
         last_execution_time = container.execution_time[-1]
 
-        #plt.figure()
-        #ax = plt.subplot()
-        #lobj, = ax.plot([0,1], [0,1], "k-", linewidth = 1.0)
-        #while True:
-            #print(np.array(container.board_ask.keys()).shape)
-            #lobj.set_data(container.board_ask.keys(), container.board_ask.items())
-            #plt.pause(0.25)
+        plt.figure()
+        ax = plt.subplot()
+        lobj_a, = ax.plot([0,1], [0,1], "r-", linewidth = 1.0)
+        lobj_b, = ax.plot([0,1], [0,1], "b-", linewidth = 1.0)
+        while True:
+            lobj_a.set_data(container.board_ask.keys(), container.board_ask.values())
+            lobj_b.set_data(container.board_bid.keys(), container.board_bid.values())
+            ax.set_xlim(container.ticker_bid[-1] - 1000, container.ticker_ask[-1] + 1000)
+            ax.set_ylim(0, 20)
+            plt.pause(0.25)
 
+        """
         while True:
             if container.execution_time[-1] > last_execution_time:
                 print(container.execution_time[-1], container.ticker_bid[-1], container.ticker_ask[-1], container.execution_price[-1])
                 last_execution_time = container.execution_time[-1]
                 print(datetime.fromtimestamp(container.execution_time[-1]))
                 time.sleep(0.01)
-
+        """
         return
 
 class ws_bitflyer:
@@ -245,7 +249,6 @@ class Container:
         if self.channel["board"]:
             self.board_thrd = threading.Thread(target=self.update_board, args=(), daemon=True)
             self.board_thrd.start()
-
         if self.channel["ticker"]:            
             self.ticker_thrd = threading.Thread(target=self.update_ticker, args=(), daemon=True)
             self.ticker_thrd.start()            
@@ -261,6 +264,19 @@ class Container:
                     message = self.board_reader.recv()
                     self.board_ask.update([(d.get('price', 0), d.get('size', 0)) for d in message["asks"]])
                     self.board_bid.update([(d.get('price', 0), d.get('size', 0)) for d in message["bids"]])
+                    mid_price = message["mid_price"]
+                    print(mid_price)
+                    for d in self.board_ask:
+                        if d < mid_price:
+                            self.board_ask[d] = 0
+                        else:
+                            break
+                    for d in reversed(self.board_bid):
+                        if d > mid_price:
+                            self.board_bid[d] = 0
+                        else:
+                            break
+
                 time.sleep(0.001)
         except:
             print(traceback.format_exc())
