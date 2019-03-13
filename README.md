@@ -1,5 +1,5 @@
 # superbot
-~IF YOU USE THIS PROGRAM, FIRST, DONATE TO ME.~  
+金くれ。金。
 BTC : 3QyStgvWS68HKhQbcPRUpvZX7DpG1YGpg1  
 ETH : 0x5b608fc41b59d5f452b3c5a537a841b9c4bf41f4  
 LTC : LgkqRc9nEPs4ubrtwbZJ6MZ7u4ztSPSFnF  
