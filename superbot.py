@@ -69,10 +69,18 @@ class Logic:
         lobj_a, = ax.plot([0,1], [0,1], "r-", linewidth = 1.0)
         lobj_b, = ax.plot([0,1], [0,1], "b-", linewidth = 1.0)
         while True:
-            lobj_a.set_data(container.board_ask.keys(), container.board_ask.values())
-            lobj_b.set_data(container.board_bid.keys(), container.board_bid.values())
-            ax.set_xlim(container.ticker_bid[-1] - 10000, container.ticker_ask[-1] + 10000)
-            ax.set_ylim(0, 20)
+            asks = np.copy(container.board_ask)
+            bids = np.copy(container.board_bid)
+            
+            lobj_a.set_data(asks[0,:], asks[1,:])
+            lobj_b.set_data(bids[0,:], bids[1,:])
+            ax.set_xlim(container.ticker_bid[-1] - 200, container.ticker_ask[-1] + 200)
+            a = asks[0,:] > container.ticker_ask[-1]
+            b = asks[0,:] < container.ticker_ask[-1] + 200
+            c = np.logical_and(a, b)
+            ymax = np.max(asks[1,:][np.where(c)])
+            print(ymax)
+            ax.set_ylim(0, ymax)
             plt.pause(0.25)
 
         """
@@ -106,7 +114,7 @@ class ws_bitflyer:
         self.board_api_thrd = (threading.Thread(target=self.get_board, args=(), daemon=True))
         self.channels = []
 
-
+        self.lock = threading.Lock()
         return
     
     def connect_to_container(self, container):
@@ -144,7 +152,9 @@ class ws_bitflyer:
             return
         try:
             if message["params"]["channel"] == "lightning_board_FX_BTC_JPY":
+                self.lock.acquire()
                 self.board_writer.send(message["params"]["message"])
+                self.lock.release()
             elif message["params"]["channel"] == "lightning_board_snapshot_FX_BTC_JPY":
                 self.board_writer.send(message["params"]["message"])
             elif message["params"]["channel"] == "lightning_ticker_FX_BTC_JPY":
@@ -162,8 +172,10 @@ class ws_bitflyer:
                 try:
                     res = self.API.board(product_code = "FX_BTC_JPY")
                     if "mid_price" in res.keys():
-                         self.board_writer.send(res)
-                         last_get_time = time.time()
+                        self.lock.acquire()
+                        self.board_writer.send(res)
+                        self.lock.release()
+                        last_get_time = time.time()
                 except:
                     print(traceback.format_exc())
             else:
@@ -229,9 +241,11 @@ class ws_bitflyer:
 class Container:
     def __init__(self, channel = {"board" : True, "ticker" : True, "executions" : True}):
         self.channel = channel
-        board_data_size = 10        
-        self.board_ask = sc.SortedDict()
-        self.board_bid = sc.SortedDict()
+        board_data_size = 10
+        self.board_ask = np.array([[],[]])
+        self.board_bid = np.array([[],[]])
+        self.tmp_board_ask = sc.SortedDict()
+        self.tmp_board_bid = sc.SortedDict()
         self.board_time = collections.deque([], board_data_size)
         self.board_ask_history = collections.deque([], board_data_size)
         self.board_bid_history = collections.deque([], board_data_size)
@@ -269,21 +283,26 @@ class Container:
             while True:
                 if self.board_reader.poll():
                     message = self.board_reader.recv()
-                    self.board_ask.update([(d.get('price', 0), d.get('size', 0)) for d in message["asks"]])
-                    self.board_bid.update([(d.get('price', 0), d.get('size', 0)) for d in message["bids"]])
+                    self.tmp_board_ask.update([(d.get('price', 0), d.get('size', 0)) for d in message["asks"]])
+                    self.tmp_board_bid.update([(d.get('price', 0), d.get('size', 0)) for d in message["bids"]])
                     mid_price = message["mid_price"]
-                    for d in self.board_ask:
+                    for d in self.tmp_board_ask:
                         if d < mid_price:
-                            self.board_ask[d] = 0
+                            self.tmp_board_ask[d] = 0
                         else:
                             break
-                    for d in reversed(self.board_bid):
+                    for d in reversed(self.tmp_board_bid):
                         if d > mid_price:
-                            self.board_bid[d] = 0
+                            self.tmp_board_bid[d] = 0
                         else:
                             break
+                    self.board_ask = np.array([self.tmp_board_ask.keys(), self.tmp_board_ask.values()])
+                    self.board_bid = np.array([self.tmp_board_bid.keys(), self.tmp_board_bid.values()])
 
-                            
+                    self.board_time.append(time.time())                    
+                    self.board_ask_history.append(self.board_ask)
+                    self.board_bid_history.append(self.board_bid)
+
                 time.sleep(0.001)
         except:
             print(traceback.format_exc())
