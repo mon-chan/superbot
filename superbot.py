@@ -1,6 +1,5 @@
 import multiprocessing as mp
 import threading
-import concurrent.futures
 import sortedcontainers as sc
 import collections
 import time
@@ -13,6 +12,8 @@ import calendar
 
 import pybitflyer2
 import numpy as np
+
+from logic_plot import Logic_plot as Logic
 def main():
     spbot = Superbot()
     spbot.run()
@@ -53,45 +54,6 @@ class Log:
     def run(self):
         return
 
-import matplotlib.pyplot as plt
-class Logic:
-    def __init__(self, max_workers = 6):
-        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers)
-        return
-    
-    def run(self, container, min_len = 3):
-        while not (len(container.ticker_time) > min_len and len(container.execution_time) > min_len):
-            time.sleep(0.1)
-        last_execution_time = container.execution_time[-1]
-
-        plt.figure()
-        ax = plt.subplot()
-        lobj_a, = ax.plot([0,1], [0,1], "r-", linewidth = 1.0)
-        lobj_b, = ax.plot([0,1], [0,1], "b-", linewidth = 1.0)
-        while True:
-            asks = np.copy(container.board_ask)
-            bids = np.copy(container.board_bid)
-            
-            lobj_a.set_data(asks[0,:], asks[1,:])
-            lobj_b.set_data(bids[0,:], bids[1,:])
-            ax.set_xlim(container.ticker_bid[-1] - 200, container.ticker_ask[-1] + 200)
-            a = asks[0,:] > container.ticker_ask[-1]
-            b = asks[0,:] < container.ticker_ask[-1] + 200
-            c = np.logical_and(a, b)
-            ymax = np.max(asks[1,:][np.where(c)])
-            print(ymax)
-            ax.set_ylim(0, ymax)
-            plt.pause(0.25)
-
-        """
-        while True:
-            if container.execution_time[-1] > last_execution_time:
-                print(container.execution_time[-1], container.ticker_bid[-1], container.ticker_ask[-1], container.execution_price[-1])
-                last_execution_time = container.execution_time[-1]
-                print(datetime.fromtimestamp(container.execution_time[-1]))
-                time.sleep(0.01)
-        """
-        return
 
 class ws_bitflyer:
     def __init__(self, redundancy = 2):
