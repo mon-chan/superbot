@@ -4,23 +4,26 @@ import datetime
 import calendar
 import time
 import pickle
-
+import traceback
 pbf = PBF.API()
 
 
 def main():
     today = datetime.datetime.now()
     yesterday = today - datetime.timedelta(days = 1)
-    tday = today
-    #tday = yesterday
-    start_time = datetime.datetime(tday.year, tday.month, tday.day, 16, 0)
+    #tday = today
+    tday = yesterday
+    start_time = datetime.datetime(tday.year, tday.month, tday.day, 0, 0)
     end_time = datetime.datetime(tday.year, tday.month, tday.day, 23, 59)
     df = None
     last_id = None
     while True:
         time.sleep(0.2)
-        
-        df0 = save_executions(last_id, product_code = "FX_BTC_JPY")
+        try:
+            df0 = save_executions(last_id, product_code = "FX_BTC_JPY")
+        except:
+            print(traceback.format_exc())
+            continue
         last_id = df0.iloc[-1]["id"]        
         time1 = datetime.datetime.fromtimestamp(df0["unixtime"].iloc[0]) # end
         time0 = datetime.datetime.fromtimestamp(df0["unixtime"].iloc[-1]) # start
