@@ -3,10 +3,9 @@ import pandas as pd
 import datetime
 import calendar
 import time
-
+import pickle
 
 pbf = PBF.API()
-
 
 
 def main():
@@ -14,7 +13,7 @@ def main():
     yesterday = today - datetime.timedelta(days = 1)
     tday = today
     #tday = yesterday
-    start_time = datetime.datetime(tday.year, tday.month, tday.day, 0, 0)
+    start_time = datetime.datetime(tday.year, tday.month, tday.day, 16, 0)
     end_time = datetime.datetime(tday.year, tday.month, tday.day, 23, 59)
     df = None
     last_id = None
@@ -48,7 +47,7 @@ def main():
 
     start = datetime.datetime.fromtimestamp(df0["unixtime"].iloc[-1])
     end = datetime.datetime.fromtimestamp(df0["unixtime"].iloc[0])      
-    fname = str(end).split()[0] + "pkl"
+    fname = str(end).split()[0] + ".pkl"
     with open(fname, "wb") as f:
         pickle.dump(df, f)
         
@@ -66,13 +65,11 @@ def save_executions(last_id=None, product_code = "FX_BTC_JPY"):
         
     df1 = pd.DataFrame(data)
     df1 = df1[["exec_date", "id", "price", "side", "size"]]
-
     df2 = df1[["exec_date"]].applymap(convert)
     df0 = pd.concat([df2, df1], axis=1)
 
     #print(df1.columns)
-    df0.columns = [["unixtime"] + list(df1.columns)]
-
+    df0.columns = ["unixtime"] + list(df1.columns)
     return df0
     
 def convert(strtime):
